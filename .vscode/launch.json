@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "chrome",
+      "request": "launch",
+      "name": "Debug Chrome Extension",
+      "url": "http://example.com",
+      "webRoot": "${workspaceFolder}/src",
+      "runtimeArgs": [
+        "--load-extension=${workspaceFolder}/dist"
+      ],
+      "sourceMaps": true,
+      "sourceMapPathOverrides": {
+        "webpack:///*": "${webRoot}/*"
+      },
+      "preLaunchTask": "npm: build",
+      "outFiles": ["${workspaceFolder}/dist/**/*.js"]
+    }
+  ]
+} 

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>AI Browser Assistant</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <h1>AI Browser Assistant</h1>
+    
+    <div class="feature-toggles">
+      <label>
+        <input type="checkbox" id="adBlockingToggle">
+        Ad Blocking
+      </label>
+      
+      <label>
+        <input type="checkbox" id="searchReorderingToggle">
+        Search Reordering
+      </label>
+      
+      <label>
+        <input type="checkbox" id="contextSuggestionsToggle">
+        Context Suggestions
+      </label>
+    </div>
+
+    <div class="stats">
+      <div>Ads Blocked Today: <span id="adsBlockedCount">0</span></div>
+      <div>API Calls Today: <span id="apiCallsCount">0</span></div>
+    </div>
+
+    <div class="actions">
+      <button id="settingsButton">Settings</button>
+      <button id="refreshButton">Refresh Page</button>
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

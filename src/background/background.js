@@ -1,161 +1,90 @@
-console.log('Background script initializing...');
+// 导入 AI 服务管理器
+import aiManager from '../utils/ai-service-manager';
 
-// 监听扩展安装或更新事件
+// 初始化
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('Extension installed/updated');
-  // 初始化存储的默认值
+  // 设置默认配置
   chrome.storage.sync.set({
     features: {
       adBlocking: true,
       searchReordering: true,
       contextSuggestions: true
-    },
-    aiProvider: 'siliconflow',
-    aiModel: 'qwen/qwen-turbo',
-    apiKeys: {}
+    }
   });
 });
 
-// 处理 AI 请求
-async function handleAIRequest(request) {
-  const { provider, model, apiKey, endpoint, data } = request;
-  
-  try {
-    // 根据不同的 AI 提供商处理请求
-    switch (provider) {
-      case 'siliconflow':
-        return await handleSiliconFlowRequest(endpoint, data, apiKey);
-      case 'openai':
-        return await handleOpenAIRequest(model, data, apiKey);
-      case 'claude':
-        return await handleClaudeRequest(model, data, apiKey);
-      default:
-        throw new Error(`Unsupported AI provider: ${provider}`);
-    }
-  } catch (error) {
-    console.error('AI request failed:', error);
-    throw error;
-  }
-}
-
-// SiliconFlow API 请求处理
-async function handleSiliconFlowRequest(endpoint, data, apiKey) {
-  console.log('SiliconFlow API 请求处理')
-  const response = await fetch(`https://api.siliconflow.cn/v1/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
-    },
-    body: JSON.stringify(data)
-  });
-  console.log(JSON.stringify(data))
-  if (!response.ok) {
-    throw new Error(`SiliconFlow API error: ${response.status}`);
-  }
-
-  return await response.json();
-}
-
-// OpenAI API 请求处理
-async function handleOpenAIRequest(model, data, apiKey) {
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      model: model,
-      messages: data.messages
-    })
-  });
-
-  if (!response.ok) {
-    throw new Error(`OpenAI API error: ${response.status}`);
-  }
-
-  return await response.json();
-}
-
-// Claude API 请求处理
-async function handleClaudeRequest(model, data, apiKey) {
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01'
-    },
-    body: JSON.stringify({
-      model: model,
-      messages: data.messages
-    })
-  });
-
-  if (!response.ok) {
-    throw new Error(`Claude API error: ${response.status}`);
-  }
-
-  return await response.json();
-}
-
-// 监听来自 content script 和 popup 的消息
+// 处理来自内容脚本的消息
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  debugger;
-  console.log('Received message:', request);
-
+  console.log('Background received message:', request);
   if (request.type === 'aiRequest') {
     handleAIRequest(request)
       .then(response => {
-        console.log('AI response:', response);
+        console.log('Sending response:', response);
         sendResponse(response);
       })
       .catch(error => {
-        console.error('Error:', error);
+        console.error('Error handling request:', error);
         sendResponse({ error: error.message });
       });
     return true; // 保持消息通道开放
   }
-
-  // 处理其他类型的消息
-  if (request.type === 'updateFeature') {
-    chrome.storage.sync.get('features', (data) => {
-      const features = data.features || {};
-      features[request.feature] = request.enabled;
-      chrome.storage.sync.set({ features });
-    });
-  }
-
-  if (request.type === 'getStats') {
-    chrome.storage.local.get('dailyStats', (data) => {
-      sendResponse(data.dailyStats || {});
-    });
-    return true;
-  }
 });
 
-// 更新统计数据
-async function updateStats(type) {
-  const today = new Date().toDateString();
-  const { dailyStats = {} } = await chrome.storage.local.get('dailyStats');
-  
-  if (!dailyStats[today]) {
-    dailyStats[today] = { adsBlocked: 0, apiCalls: 0 };
-  }
+// AI 请求处理函数
+async function handleAIRequest(request) {
+  console.log('Handling AI request:', request);
+  try {
+    const { provider, model, apiKey, type, data } = request;
+    
+    if (!provider || !model || !apiKey) {
+      throw new Error('Missing required API configuration');
+    }
+    
+    // 确保 AI 管理器使用正确的配置
+    aiManager.setProvider(provider, apiKey, model);
+    
+    switch (type) {
+      case 'aiRequest':
+        const analysis = await aiManager.currentProvider.chat([
+          {
+            role: 'system',
+            content: 'You are an ad detection assistant. Analyze the given HTML content and determine if it is likely an advertisement. Respond with {"isAd": true/false}.'
+          },
+          {
+            role: 'user',
+            content: `判断下面的HTML标签内容是否是广告，必须遵循这样的格式回复 {"isAd": true/false} : ${data.content}`
+          }
+        ]);
 
-  dailyStats[today][type]++;
-  await chrome.storage.local.set({ dailyStats });
+        if (!analysis?.choices?.[0]?.message?.content) {
+          throw new Error('Invalid API response format');
+        }
+
+        try {
+          const result = JSON.parse(analysis.choices[0].message.content);
+          if (typeof result.isAd !== 'boolean') {
+            throw new Error('Invalid response format: isAd must be boolean');
+          }
+          return { isAd: result.isAd };
+        } catch (e) {
+          console.error('Failed to parse AI response:', e);
+          return { isAd: false };
+        }
+
+      default:
+        throw new Error(`Unknown endpoint: ${endpoint}`);
+    }
+  } catch (error) {
+    console.error('AI request error:', error);
+    throw error;
+  }
 }
 
-// 监听标签页更新
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' && tab.url) {
-    chrome.tabs.sendMessage(tabId, { 
-      type: 'pageLoaded',
-      url: tab.url
-    }).catch(() => {
-      // 忽略错误，content script 可能还没准备好
-    });
-  }
-}); 
+// 注册服务工作进程
+self.addEventListener('activate', event => {
+  console.log('Service Worker activated');
+});
+
+self.addEventListener('fetch', event => {
+  // 可以在这里添加网络请求拦截逻辑
+});

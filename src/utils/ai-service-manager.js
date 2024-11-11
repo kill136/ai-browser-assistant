@@ -40,7 +40,16 @@ class AIServiceManager {
     if (!this.currentProvider) {
       throw new Error('No AI provider configured');
     }
-    return await this.currentProvider.chat(messages);
+
+    try {
+      const response = await this.currentProvider.chat(messages);
+      return response;
+    } catch (error) {
+      console.error(`AI request failed with provider ${this.currentProvider.constructor.name}:`, error);
+      
+      // 重新抛出带有更多上下文的错误
+      throw new Error(`AI request failed: ${error.message}`);
+    }
   }
 
   // 获取支持的提供商列表

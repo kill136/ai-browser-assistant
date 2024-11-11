@@ -3,7 +3,7 @@ import BaseAIProvider from './base-provider';
 class SiliconFlowProvider extends BaseAIProvider {
   constructor(apiKey, model) {
     super(apiKey, model || SiliconFlowProvider.getDefaultModel());
-    this.baseURL = 'https://api.siliconflow.com/v1';
+    this.baseURL = 'https://api.siliconflow.cn/v1';
   }
 
   static getSupportedModels() {
@@ -24,6 +24,7 @@ class SiliconFlowProvider extends BaseAIProvider {
       },
       body: JSON.stringify({
         model: this.model,
+        stream: false,
         messages,
         temperature: 0.7
       })

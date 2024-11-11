@@ -1,168 +1,505 @@
 /******/ (() => { // webpackBootstrap
+/******/ 	"use strict";
+/******/ 	var __webpack_modules__ = ({
+
+/***/ "./src/utils/ai-providers/base-provider.js":
+/*!*************************************************!*\
+  !*** ./src/utils/ai-providers/base-provider.js ***!
+  \*************************************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "default": () => (__WEBPACK_DEFAULT_EXPORT__)
+/* harmony export */ });
+class BaseAIProvider {
+  constructor(apiKey, model) {
+    this.apiKey = apiKey;
+    this.model = model;
+  }
+
+  async analyze(content) {
+    throw new Error('Method not implemented');
+  }
+
+  async chat(messages) {
+    throw new Error('Method not implemented');
+  }
+
+  async complete(prompt) {
+    throw new Error('Method not implemented');
+  }
+}
+
+/* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = (BaseAIProvider);
+
+/***/ }),
+
+/***/ "./src/utils/ai-providers/claude-provider.js":
+/*!***************************************************!*\
+  !*** ./src/utils/ai-providers/claude-provider.js ***!
+  \***************************************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "default": () => (__WEBPACK_DEFAULT_EXPORT__)
+/* harmony export */ });
+/* harmony import */ var _base_provider__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./base-provider */ "./src/utils/ai-providers/base-provider.js");
+
+
+class ClaudeProvider extends _base_provider__WEBPACK_IMPORTED_MODULE_0__["default"] {
+  constructor(apiKey) {
+    super(apiKey);
+    this.baseURL = 'https://api.anthropic.com/v1';
+  }
+
+  async chat(messages) {
+    // 将消息格式转换为 Claude 格式
+    const formattedMessages = messages.map(msg => ({
+      role: msg.role === 'assistant' ? 'assistant' : 'user',
+      content: msg.content
+    }));
+
+    const response = await fetch(`${this.baseURL}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': this.apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-3-opus-20240229',
+        messages: formattedMessages,
+        max_tokens: 1000
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Claude API error: ${response.statusText}`);
+    }
+
+    return await response.json();
+  }
+}
+
+/* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = (ClaudeProvider);
+
+/***/ }),
+
+/***/ "./src/utils/ai-providers/openai-provider.js":
+/*!***************************************************!*\
+  !*** ./src/utils/ai-providers/openai-provider.js ***!
+  \***************************************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "default": () => (__WEBPACK_DEFAULT_EXPORT__)
+/* harmony export */ });
+/* harmony import */ var _base_provider__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./base-provider */ "./src/utils/ai-providers/base-provider.js");
+
+
+class OpenAIProvider extends _base_provider__WEBPACK_IMPORTED_MODULE_0__["default"] {
+  constructor(apiKey) {
+    super(apiKey);
+    this.baseURL = 'https://api.openai.com/v1';
+  }
+
+  async chat(messages) {
+    const response = await fetch(`${this.baseURL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.apiKey}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-3.5-turbo',
+        messages,
+        temperature: 0.7
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`OpenAI API error: ${response.statusText}`);
+    }
+
+    return await response.json();
+  }
+}
+
+/* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = (OpenAIProvider);
+
+/***/ }),
+
+/***/ "./src/utils/ai-providers/openrouter-provider.js":
+/*!*******************************************************!*\
+  !*** ./src/utils/ai-providers/openrouter-provider.js ***!
+  \*******************************************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "default": () => (__WEBPACK_DEFAULT_EXPORT__)
+/* harmony export */ });
+/* harmony import */ var _base_provider__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./base-provider */ "./src/utils/ai-providers/base-provider.js");
+
+
+class OpenRouterProvider extends _base_provider__WEBPACK_IMPORTED_MODULE_0__["default"] {
+  constructor(apiKey, model) {
+    super(apiKey, model || OpenRouterProvider.getDefaultModel());
+    this.baseURL = 'https://openrouter.ai/api/v1';
+  }
+
+  static getSupportedModels() {
+    return [
+      { id: 'openai/gpt-4-turbo-preview', name: 'GPT-4 Turbo', description: 'Via OpenAI' },
+      { id: 'anthropic/claude-3-opus', name: 'Claude 3 Opus', description: 'Via Anthropic' },
+      { id: 'google/gemini-pro', name: 'Gemini Pro', description: 'Via Google' },
+      { id: 'meta-llama/llama-2-70b-chat', name: 'Llama 2 70B', description: 'Via Meta' },
+      { id: 'mistral/mistral-medium', name: 'Mistral Medium', description: 'Via Mistral AI' }
+    ];
+  }
+
+  async chat(messages) {
+    const response = await fetch(`${this.baseURL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.apiKey}`,
+        'HTTP-Referer': chrome.runtime.getManifest().homepage_url || 'https://github.com',
+        'X-Title': chrome.runtime.getManifest().name
+      },
+      body: JSON.stringify({
+        model: this.model,
+        messages,
+        temperature: 0.7
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`OpenRouter API error: ${response.statusText}`);
+    }
+
+    return await response.json();
+  }
+}
+
+/* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = (OpenRouterProvider); 
+
+/***/ }),
+
+/***/ "./src/utils/ai-providers/siliconflow-provider.js":
+/*!********************************************************!*\
+  !*** ./src/utils/ai-providers/siliconflow-provider.js ***!
+  \********************************************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "default": () => (__WEBPACK_DEFAULT_EXPORT__)
+/* harmony export */ });
+/* harmony import */ var _base_provider__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./base-provider */ "./src/utils/ai-providers/base-provider.js");
+
+
+class SiliconFlowProvider extends _base_provider__WEBPACK_IMPORTED_MODULE_0__["default"] {
+  constructor(apiKey, model) {
+    super(apiKey, model || SiliconFlowProvider.getDefaultModel());
+    this.baseURL = 'https://api.siliconflow.cn/v1';
+  }
+
+  static getSupportedModels() {
+    return [
+      { id: 'Qwen/Qwen2.5-7B-Instruct', name: 'Qwen/Qwen2.5-7B-Instruct', description: 'Qwen/Qwen2.5-7B-Instruct' },
+      { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo', description: 'OpenAI GPT-3.5' },
+      { id: 'claude-2', name: 'Claude 2', description: 'Anthropic Claude 2' },
+      { id: 'palm2', name: 'PaLM 2', description: 'Google PaLM 2' }
+    ];
+  }
+
+  async chat(messages) {
+    const response = await fetch(`${this.baseURL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.apiKey}`
+      },
+      body: JSON.stringify({
+        model: this.model,
+        stream: false,
+        messages,
+        temperature: 0.7
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`SiliconFlow API error: ${response.statusText}`);
+    }
+
+    return await response.json();
+  }
+}
+
+/* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = (SiliconFlowProvider); 
+
+/***/ }),
+
+/***/ "./src/utils/ai-service-manager.js":
+/*!*****************************************!*\
+  !*** ./src/utils/ai-service-manager.js ***!
+  \*****************************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "default": () => (__WEBPACK_DEFAULT_EXPORT__)
+/* harmony export */ });
+/* harmony import */ var _ai_providers_openai_provider__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./ai-providers/openai-provider */ "./src/utils/ai-providers/openai-provider.js");
+/* harmony import */ var _ai_providers_claude_provider__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./ai-providers/claude-provider */ "./src/utils/ai-providers/claude-provider.js");
+/* harmony import */ var _ai_providers_openrouter_provider__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./ai-providers/openrouter-provider */ "./src/utils/ai-providers/openrouter-provider.js");
+/* harmony import */ var _ai_providers_siliconflow_provider__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./ai-providers/siliconflow-provider */ "./src/utils/ai-providers/siliconflow-provider.js");
+
+
+
+
+
+class AIServiceManager {
+  constructor() {
+    this.providers = new Map();
+    this.currentProvider = null;
+  }
+
+  async initialize() {
+    const settings = await chrome.storage.sync.get(['aiProvider', 'apiKeys']);
+    if (settings.aiProvider && settings.apiKeys?.[settings.aiProvider]) {
+      this.setProvider(settings.aiProvider, settings.apiKeys[settings.aiProvider]);
+    }
+  }
+
+  getProviderClass(providerName) {
+    switch (providerName.toLowerCase()) {
+      case 'openai': return _ai_providers_openai_provider__WEBPACK_IMPORTED_MODULE_0__["default"];
+      case 'claude': return _ai_providers_claude_provider__WEBPACK_IMPORTED_MODULE_1__["default"];
+      case 'openrouter': return _ai_providers_openrouter_provider__WEBPACK_IMPORTED_MODULE_2__["default"];
+      case 'siliconflow': return _ai_providers_siliconflow_provider__WEBPACK_IMPORTED_MODULE_3__["default"];
+      default: throw new Error(`Unknown provider: ${providerName}`);
+    }
+  }
+
+  setProvider(providerName, apiKey, model) {
+    const ProviderClass = this.getProviderClass(providerName);
+    this.currentProvider = new ProviderClass(apiKey, model);
+  }
+
+  getModelsForProvider(providerName) {
+    const ProviderClass = this.getProviderClass(providerName);
+    return ProviderClass.getSupportedModels();
+  }
+
+  async chat(messages) {
+    if (!this.currentProvider) {
+      throw new Error('No AI provider configured');
+    }
+
+    try {
+      const response = await this.currentProvider.chat(messages);
+      return response;
+    } catch (error) {
+      console.error(`AI request failed with provider ${this.currentProvider.constructor.name}:`, error);
+      
+      // 重新抛出带有更多上下文的错误
+      throw new Error(`AI request failed: ${error.message}`);
+    }
+  }
+
+  // 获取支持的提供商列表
+  getSupportedProviders() {
+    return [
+      {
+        id: 'openai',
+        name: 'OpenAI',
+        description: 'OpenAI GPT API'
+      },
+      {
+        id: 'claude',
+        name: 'Claude',
+        description: 'Anthropic Claude API'
+      },
+      {
+        id: 'openrouter',
+        name: 'OpenRouter',
+        description: 'OpenRouter API Gateway'
+      },
+      {
+        id: 'siliconflow',
+        name: 'SiliconFlow',
+        description: 'SiliconFlow API Service'
+      }
+    ];
+  }
+}
+
+/* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = (new AIServiceManager()); 
+
+/***/ })
+
+/******/ 	});
+/************************************************************************/
+/******/ 	// The module cache
+/******/ 	var __webpack_module_cache__ = {};
+/******/ 	
+/******/ 	// The require function
+/******/ 	function __webpack_require__(moduleId) {
+/******/ 		// Check if module is in cache
+/******/ 		var cachedModule = __webpack_module_cache__[moduleId];
+/******/ 		if (cachedModule !== undefined) {
+/******/ 			return cachedModule.exports;
+/******/ 		}
+/******/ 		// Create a new module (and put it into the cache)
+/******/ 		var module = __webpack_module_cache__[moduleId] = {
+/******/ 			// no module.id needed
+/******/ 			// no module.loaded needed
+/******/ 			exports: {}
+/******/ 		};
+/******/ 	
+/******/ 		// Execute the module function
+/******/ 		__webpack_modules__[moduleId](module, module.exports, __webpack_require__);
+/******/ 	
+/******/ 		// Return the exports of the module
+/******/ 		return module.exports;
+/******/ 	}
+/******/ 	
+/************************************************************************/
+/******/ 	/* webpack/runtime/define property getters */
+/******/ 	(() => {
+/******/ 		// define getter functions for harmony exports
+/******/ 		__webpack_require__.d = (exports, definition) => {
+/******/ 			for(var key in definition) {
+/******/ 				if(__webpack_require__.o(definition, key) && !__webpack_require__.o(exports, key)) {
+/******/ 					Object.defineProperty(exports, key, { enumerable: true, get: definition[key] });
+/******/ 				}
+/******/ 			}
+/******/ 		};
+/******/ 	})();
+/******/ 	
+/******/ 	/* webpack/runtime/hasOwnProperty shorthand */
+/******/ 	(() => {
+/******/ 		__webpack_require__.o = (obj, prop) => (Object.prototype.hasOwnProperty.call(obj, prop))
+/******/ 	})();
+/******/ 	
+/******/ 	/* webpack/runtime/make namespace object */
+/******/ 	(() => {
+/******/ 		// define __esModule on exports
+/******/ 		__webpack_require__.r = (exports) => {
+/******/ 			if(typeof Symbol !== 'undefined' && Symbol.toStringTag) {
+/******/ 				Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' });
+/******/ 			}
+/******/ 			Object.defineProperty(exports, '__esModule', { value: true });
+/******/ 		};
+/******/ 	})();
+/******/ 	
+/************************************************************************/
+var __webpack_exports__ = {};
+// This entry needs to be wrapped in an IIFE because it needs to be isolated against other modules in the chunk.
+(() => {
 /*!**************************************!*\
   !*** ./src/background/background.js ***!
   \**************************************/
-console.log('Background script initializing...');
+__webpack_require__.r(__webpack_exports__);
+/* harmony import */ var _utils_ai_service_manager__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../utils/ai-service-manager */ "./src/utils/ai-service-manager.js");
+// 导入 AI 服务管理器
 
-// 监听扩展安装或更新事件
+
+// 初始化
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('Extension installed/updated');
-  // 初始化存储的默认值
+  // 设置默认配置
   chrome.storage.sync.set({
     features: {
       adBlocking: true,
       searchReordering: true,
       contextSuggestions: true
-    },
-    aiProvider: 'siliconflow',
-    aiModel: 'qwen/qwen-turbo',
-    apiKeys: {}
+    }
   });
 });
 
-// 处理 AI 请求
-async function handleAIRequest(request) {
-  const { provider, model, apiKey, endpoint, data } = request;
-  
-  try {
-    // 根据不同的 AI 提供商处理请求
-    switch (provider) {
-      case 'siliconflow':
-        return await handleSiliconFlowRequest(endpoint, data, apiKey);
-      case 'openai':
-        return await handleOpenAIRequest(model, data, apiKey);
-      case 'claude':
-        return await handleClaudeRequest(model, data, apiKey);
-      default:
-        throw new Error(`Unsupported AI provider: ${provider}`);
-    }
-  } catch (error) {
-    console.error('AI request failed:', error);
-    throw error;
-  }
-}
-
-// SiliconFlow API 请求处理
-async function handleSiliconFlowRequest(endpoint, data, apiKey) {
-  console.log('SiliconFlow API 请求处理')
-  const response = await fetch(`https://api.siliconflow.cn/v1/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
-    },
-    body: JSON.stringify(data)
-  });
-  console.log(JSON.stringify(data))
-  if (!response.ok) {
-    throw new Error(`SiliconFlow API error: ${response.status}`);
-  }
-
-  return await response.json();
-}
-
-// OpenAI API 请求处理
-async function handleOpenAIRequest(model, data, apiKey) {
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      model: model,
-      messages: data.messages
-    })
-  });
-
-  if (!response.ok) {
-    throw new Error(`OpenAI API error: ${response.status}`);
-  }
-
-  return await response.json();
-}
-
-// Claude API 请求处理
-async function handleClaudeRequest(model, data, apiKey) {
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01'
-    },
-    body: JSON.stringify({
-      model: model,
-      messages: data.messages
-    })
-  });
-
-  if (!response.ok) {
-    throw new Error(`Claude API error: ${response.status}`);
-  }
-
-  return await response.json();
-}
-
-// 监听来自 content script 和 popup 的消息
+// 处理来自内容脚本的消息
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  debugger;
-  console.log('Received message:', request);
-
+  console.log('Background received message:', request);
   if (request.type === 'aiRequest') {
     handleAIRequest(request)
       .then(response => {
-        console.log('AI response:', response);
+        console.log('Sending response:', response);
         sendResponse(response);
       })
       .catch(error => {
-        console.error('Error:', error);
+        console.error('Error handling request:', error);
         sendResponse({ error: error.message });
       });
     return true; // 保持消息通道开放
   }
-
-  // 处理其他类型的消息
-  if (request.type === 'updateFeature') {
-    chrome.storage.sync.get('features', (data) => {
-      const features = data.features || {};
-      features[request.feature] = request.enabled;
-      chrome.storage.sync.set({ features });
-    });
-  }
-
-  if (request.type === 'getStats') {
-    chrome.storage.local.get('dailyStats', (data) => {
-      sendResponse(data.dailyStats || {});
-    });
-    return true;
-  }
 });
 
-// 更新统计数据
-async function updateStats(type) {
-  const today = new Date().toDateString();
-  const { dailyStats = {} } = await chrome.storage.local.get('dailyStats');
-  
-  if (!dailyStats[today]) {
-    dailyStats[today] = { adsBlocked: 0, apiCalls: 0 };
-  }
+// AI 请求处理函数
+async function handleAIRequest(request) {
+  console.log('Handling AI request:', request);
+  try {
+    const { provider, model, apiKey, type, data } = request;
+    
+    if (!provider || !model || !apiKey) {
+      throw new Error('Missing required API configuration');
+    }
+    
+    // 确保 AI 管理器使用正确的配置
+    _utils_ai_service_manager__WEBPACK_IMPORTED_MODULE_0__["default"].setProvider(provider, apiKey, model);
+    
+    switch (type) {
+      case 'aiRequest':
+        const analysis = await _utils_ai_service_manager__WEBPACK_IMPORTED_MODULE_0__["default"].currentProvider.chat([
+          {
+            role: 'system',
+            content: 'You are an ad detection assistant. Analyze the given HTML content and determine if it is likely an advertisement. Respond with {"isAd": true/false}.'
+          },
+          {
+            role: 'user',
+            content: `判断下面的HTML标签内容是否是广告，必须遵循这样的格式回复 {"isAd": true/false} : ${data.content}`
+          }
+        ]);
 
-  dailyStats[today][type]++;
-  await chrome.storage.local.set({ dailyStats });
+        if (!analysis?.choices?.[0]?.message?.content) {
+          throw new Error('Invalid API response format');
+        }
+
+        try {
+          const result = JSON.parse(analysis.choices[0].message.content);
+          if (typeof result.isAd !== 'boolean') {
+            throw new Error('Invalid response format: isAd must be boolean');
+          }
+          return { isAd: result.isAd };
+        } catch (e) {
+          console.error('Failed to parse AI response:', e);
+          return { isAd: false };
+        }
+
+      default:
+        throw new Error(`Unknown endpoint: ${endpoint}`);
+    }
+  } catch (error) {
+    console.error('AI request error:', error);
+    throw error;
+  }
 }
 
-// 监听标签页更新
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' && tab.url) {
-    chrome.tabs.sendMessage(tabId, { 
-      type: 'pageLoaded',
-      url: tab.url
-    }).catch(() => {
-      // 忽略错误，content script 可能还没准备好
-    });
-  }
-}); 
+// 注册服务工作进程
+self.addEventListener('activate', event => {
+  console.log('Service Worker activated');
+});
+
+self.addEventListener('fetch', event => {
+  // 可以在这里添加网络请求拦截逻辑
+});
+
+})();
+
 /******/ })()
 ;
 //# sourceMappingURL=background.js.map

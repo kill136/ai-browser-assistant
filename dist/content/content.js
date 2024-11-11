@@ -44,10 +44,56 @@ class ContentAnalyzer {
   }
 
   analyzeExistingContent() {
-    // 分析页面上现有的元素
-    const elements = document.body.getElementsByTagName('*');
-    for (const element of elements) {
-      this.analyzeElement(element);
+  // 根据不同搜索引擎选择合适的选择器
+  const isGoogle = window.location.hostname.includes('google');
+  const isBing = window.location.hostname.includes('bing');
+  const isBaidu = window.location.hostname.includes('baidu');
+
+  let searchResults;
+  if (isGoogle) {
+    // Google 搜索结果选择器
+    searchResults = document.querySelectorAll([
+      '#search .g',                // 普通搜索结果
+      '#rso .g',                   // 另一种搜索结果容器
+      'div[data-sokoban-grid]',    // 新版搜索结果
+      '.commercial-unit-desktop-top', // 顶部广告
+      '.commercial-unit-desktop-rhs'  // 右侧广告
+    ].join(','));
+  } else if (isBing) {
+    // Bing 搜索结果选择器
+    searchResults = document.querySelectorAll([
+      '#b_results > li',           // 主要搜索结果
+      '.b_ad',                     // 广告结果
+      '.b_algo',                   // 算法搜索结果
+      '.b_sideBleed'               // 侧边栏结果
+    ].join(','));
+  } else if (isBaidu) {
+    // 百度搜索结果选择器
+    searchResults = document.querySelectorAll([
+      '#content_left > div',      // 主要搜索结果区域
+      '.result-op',               // 特殊搜索结果（如百科、图片等）
+      '.result',                  // 普通搜索结果
+      '[cmatchid]',              // 广告结果
+      '.ec_tuiguang_link',       // 推广链接
+      '#content_right .cr-content', // 右侧栏内容
+      '.c-container'             // 新版搜索结果容器
+    ].join(','));
+  }
+
+  // 分析每个搜索结果块
+  for (const result of searchResults) {
+      // 等待分析完成并处理结果
+      this.analyzeSearchResult(result).then(isAd => {
+        if (isAd) {
+          // 如果是广告，隐藏结果
+          result.style.display = 'none';
+          // 或者添加警告样式
+          // result.classList.add('ad-warning');
+          console.log('已隐藏广告内容:', result);
+        }
+      }).catch(error => {
+        console.error('分析搜索结果时出错:', error);
+      });
     }
   }
 
@@ -85,50 +131,10 @@ class ContentAnalyzer {
     }
   }
 
-  async analyzeForAd(element) {
+  async analyzeForAd(content) {
     try {
-      // 基本广告特征检查
-      const adIndicators = CONFIG.adIndicators;
-
-      // 检查元素的类名、ID和属性
-      const elementText = [
-        element.className,
-        element.id,
-        ...Array.from(element.attributes).map(attr => attr.value)
-      ].join(' ').toLowerCase();
-
-      // 检查是否包含广告相关关键词
-      const hasAdKeywords = adIndicators.some(indicator => 
-        elementText.includes(indicator)
-      );
-
-      // 如果基本检查就发现是广告，直接返回true
-      if (hasAdKeywords) {
-        return true;
-      }
-
-      // 检查常见广告尺寸
-      const commonAdSizes = CONFIG.commonAdSizes;
-
-      const rect = element.getBoundingClientRect();
-      const hasCommonAdSize = commonAdSizes.some(([width, height]) => 
-        Math.abs(rect.width - width) < 10 && Math.abs(rect.height - height) < 10
-      );
-
-      // 检查iframe源
-      const iframes = element.querySelectorAll('iframe');
-      const hasAdIframe = Array.from(iframes).some(iframe => {
-        const src = iframe.src.toLowerCase();
-        return adIndicators.some(indicator => src.includes(indicator));
-      });
-
-      // 如果满足任一条件，可能是广告
-      const isLikelyAd = hasCommonAdSize || hasAdIframe;
-      debugger
-      if (!isLikelyAd) {
         try {
           // 使用 AI 进行进一步分析
-          const content = element.outerHTML;
           const response = await this.makeAPIRequest('analyzeContent', { content });
           return response && response.isAd === true;
         } catch (apiError) {
@@ -136,9 +142,6 @@ class ContentAnalyzer {
           // 如果 API 调用失败，回退到基于启发式的判断
           return isLikelyAd;
         }
-      }
-
-      return false;
     } catch (error) {
       console.error('Ad analysis failed:', error);
       return false; // 出错时默认不屏蔽内容
@@ -174,12 +177,12 @@ class ContentAnalyzer {
                 return;
               }
 
-              if (!response || !response.success) {
+              if (!response) {
                 reject(new Error(response?.error || 'API request failed'));
                 return;
               }
 
-              resolve(response.data);
+              resolve(response);
             });
           });
 
@@ -228,6 +231,35 @@ class ContentAnalyzer {
         resolve(config);
       });
     });
+  }
+
+  analyzeSearchResult(result) {
+    // 提取所有可见文本的辅助函数
+    const getVisibleText = (element) => {
+      if (element.offsetParent === null) return '';
+      
+      if (element.tagName === 'SCRIPT' || 
+          element.tagName === 'STYLE' || 
+          element.tagName === 'NOSCRIPT') {
+        return '';
+      }
+
+      let text = '';
+      for (const node of element.childNodes) {
+        if (node.nodeType === Node.TEXT_NODE) {
+          const trimmed = node.textContent.trim();
+          if (trimmed) text += trimmed + ' ';
+        } else if (node.nodeType === Node.ELEMENT_NODE) {
+          text += getVisibleText(node) + ' ';
+        }
+      }
+      return text.trim();
+    };
+
+    // 获取所有可见文本
+    const allText = getVisibleText(result);
+    // 进行内容分析
+    return this.analyzeForAd(allText);
   }
 }
 

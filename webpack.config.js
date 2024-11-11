@@ -7,12 +7,15 @@ module.exports = {
     popup: './src/popup/popup.js',
     options: './src/options/options.js',
     content: './src/content/content.js',
-    background: './src/background/background.js'
+    background: './src/background/background.js',
+    'floating-options': './src/floating-options/floating-options.js'
   },
   output: {
     path: path.resolve(__dirname, 'dist'),
     filename: '[name]/[name].js',
-    clean: true
+    clean: {
+      keep: /\.gitkeep$/,
+    }
   },
   plugins: [
     new CopyPlugin({
@@ -36,7 +39,20 @@ module.exports = {
         {
           from: "src/options/options.css",
           to: "options/options.css"
+        },
+        {
+          from: "src/icons",
+          to: "icons"
+        },
+        {
+          from: "src/content/content.css",
+          to: "content/content.css"
+        },
+        {
+          from: "src/floating-options/floating-options.html",
+          to: "floating-options/floating-options.html"
         }
+       
       ],
     }),
   ],

@@ -17,6 +17,7 @@ const CONFIG = {
 
 class ContentAnalyzer {
   constructor() {
+    this.filterSearchResults = []; // 添加数组存储过滤后的搜索结果
     console.trace('ContentAnalyzer constructor called');
     this.initialize();
   }
@@ -43,58 +44,71 @@ class ContentAnalyzer {
     this.analyzeExistingContent();
   }
 
-  analyzeExistingContent() {
-  // 根据不同搜索引擎选择合适的选择器
-  const isGoogle = window.location.hostname.includes('google');
-  const isBing = window.location.hostname.includes('bing');
-  const isBaidu = window.location.hostname.includes('baidu');
+  async analyzeExistingContent() {
+    // 获取搜索关键词
+    const searchQuery = this.getSearchQuery();
+    if (!searchQuery) return; // 如果没有搜索关键词则返回
+    
+    // 根据不同搜索引擎选择合适的选择器
+    const isGoogle = window.location.hostname.includes('google');
+    const isBing = window.location.hostname.includes('bing');
+    const isBaidu = window.location.hostname.includes('baidu');
 
-  let searchResults;
-  if (isGoogle) {
-    // Google 搜索结果选择器
-    searchResults = document.querySelectorAll([
-      '#search .g',                // 普通搜索结果
-      '#rso .g',                   // 另一种搜索结果容器
-      'div[data-sokoban-grid]',    // 新版搜索结果
-      '.commercial-unit-desktop-top', // 顶部广告
-      '.commercial-unit-desktop-rhs'  // 右侧广告
-    ].join(','));
-  } else if (isBing) {
-    // Bing 搜索结果选择器
-    searchResults = document.querySelectorAll([
-      '#b_results > li',           // 主要搜索结果
-      '.b_ad',                     // 广告结果
-      '.b_algo',                   // 算法搜索结果
-      '.b_sideBleed'               // 侧边栏结果
-    ].join(','));
-  } else if (isBaidu) {
-    // 百度搜索结果选择器
-    searchResults = document.querySelectorAll([
-      '#content_left > div',      // 主要搜索结果区域
-      '.result-op',               // 特殊搜索结果（如百科、图片等）
-      '.result',                  // 普通搜索结果
-      '[cmatchid]',              // 广告结果
-      '.ec_tuiguang_link',       // 推广链接
-      '#content_right .cr-content', // 右侧栏内容
-      '.c-container'             // 新版搜索结果容器
-    ].join(','));
-  }
-
-  // 分析每个搜索结果块
-  for (const result of searchResults) {
-      // 等待分析完成并处理结果
-      this.analyzeSearchResult(result).then(isAd => {
-        if (isAd) {
-          // 如果是广告，隐藏结果
-          result.style.display = 'none';
-          // 或者添加警告样式
-          // result.classList.add('ad-warning');
-          console.log('已隐藏广告内容:', result);
-        }
-      }).catch(error => {
-        console.error('分析搜索结果时出错:', error);
-      });
+    let searchResults = [];
+    if (isGoogle) {
+      searchResults = Array.from(document.querySelectorAll([
+        '#search .g',
+        '#rso .g',
+        'div[data-sokoban-grid]',
+        '.commercial-unit-desktop-top',
+        '.commercial-unit-desktop-rhs'
+      ].join(','))) || [];
+    } else if (isBing) {
+      searchResults = Array.from(document.querySelectorAll([
+        '#b_results > li',
+        '.b_ad',
+        '.b_algo',
+        '.b_sideBleed'
+      ].join(','))) || [];
+    } else if (isBaidu) {
+      searchResults = Array.from(document.querySelectorAll([
+        '#content_left > div',
+        '.result-op',
+        '.result',
+        '[cmatchid]',
+        '.ec_tuiguang_link',
+        '#content_right .cr-content',
+        '.c-container'
+      ].join(','))) || [];
     }
+
+    // 清空之前的结果数组
+    this.filterSearchResults = [];
+
+    // 创建一个Promise数组来存储所有分析任务
+    const analysisPromises = searchResults.map(async result => {
+      const isAd = await this.analyzeSearchResult(result, searchQuery);
+      if (!isAd) {
+        // 获取相关性分数
+        const relevanceScore = await this.calculateRelevance(result, searchQuery);
+        return {
+          element: result,
+          score: relevanceScore
+        };
+      }
+      return null;
+    });
+
+    // 等待所有分析完成
+    const results = await Promise.all(analysisPromises);
+    
+    // 过滤掉广告（null值）并按相关性分数排序
+    this.filterSearchResults = results
+      .filter(item => item !== null)
+      .sort((a, b) => b.score - a.score);
+
+    // 重新排序DOM元素
+    this.reorderSearchResults();
   }
 
   setupMutationObserver() {
@@ -131,11 +145,11 @@ class ContentAnalyzer {
     }
   }
 
-  async analyzeForAd(content) {
+  async analyzeForAd(content,searchQuery) {
     try {
         try {
           // 使用 AI 进行进一步分析
-          const response = await this.makeAPIRequest('analyzeContent', { content });
+          const response = await this.makeAPIRequest('analyzeContent', { content,searchQuery });
           return response && response.isAd === true;
         } catch (apiError) {
           console.warn('AI analysis failed, falling back to heuristic detection:', apiError);
@@ -165,11 +179,11 @@ class ContentAnalyzer {
         try {
           const response = await new Promise((resolve, reject) => {
             chrome.runtime.sendMessage({
-              type: 'aiRequest',
+              type: 'aiRequest',      // 用于消息类型识别
+              endpoint: endpoint,      // 用于具体 API 端点识别
               provider: config.aiProvider,
               model: config.aiModel,
               apiKey: config.apiKey,
-              endpoint,
               data
             }, response => {
               if (chrome.runtime.lastError) {
@@ -178,7 +192,17 @@ class ContentAnalyzer {
               }
 
               if (!response) {
-                reject(new Error(response?.error || 'API request failed'));
+                reject(new Error('Empty response received'));
+                return;
+              }
+
+              // 根据不同端点验证响应
+              if (endpoint === 'analyzeContent' && typeof response.isAd !== 'boolean') {
+                reject(new Error('Invalid analyzeContent response format'));
+                return;
+              }
+              if (endpoint === 'calculateRelevance' && typeof response.relevanceScore !== 'number') {
+                reject(new Error('Invalid calculateRelevance response format'));
                 return;
               }
 
@@ -186,25 +210,19 @@ class ContentAnalyzer {
             });
           });
 
-          // 验证响应数据
-          if (!response || typeof response.isAd !== 'boolean') {
-            throw new Error('Invalid API response format');
-          }
-
           return response;
         } catch (error) {
           retryCount++;
           if (retryCount === maxRetries) {
             throw error;
           }
-          // 等待一段时间后重试
           await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
         }
       }
     } catch (error) {
       console.error('API request failed:', error);
-      // 返回一个默认的安全响应，而不是 null
-      return { isAd: false };
+      // 根据端点返回适当的默认值
+      return endpoint === 'analyzeContent' ? { isAd: false } : { relevanceScore: 0 };
     }
   }
 
@@ -233,7 +251,7 @@ class ContentAnalyzer {
     });
   }
 
-  analyzeSearchResult(result) {
+  analyzeSearchResult(result, searchQuery) {
     // 提取所有可见文本的辅助函数
     const getVisibleText = (element) => {
       if (element.offsetParent === null) return '';
@@ -258,13 +276,117 @@ class ContentAnalyzer {
 
     // 获取所有可见文本
     const allText = getVisibleText(result);
-    // 进行内容分析
-    return this.analyzeForAd(allText);
+    // 进行内容分析，传入搜索查询
+    return this.analyzeForAd(allText, searchQuery);
+  }
+
+  getSearchQuery() {
+    const url = new URL(window.location.href);
+    
+    // Google 搜索
+    if (window.location.hostname.includes('google')) {
+      return url.searchParams.get('q');
+    }
+    // Bing 搜索
+    else if (window.location.hostname.includes('bing')) {
+      return url.searchParams.get('q');
+    }
+    // 百度搜索
+    else if (window.location.hostname.includes('baidu')) {
+      return url.searchParams.get('wd') || url.searchParams.get('word');
+    }
+    
+    return null;
+  }
+
+  // 添加计算相关性的方法
+  async calculateRelevance(element, searchQuery) {
+    try {
+      const content = this.getVisibleText(element);
+      
+      // 调用AI服务计算相关性
+      const response = await this.makeAPIRequest('calculateRelevance', {
+        content,
+        searchQuery
+      });
+
+      return response?.relevanceScore || 0;
+    } catch (error) {
+      console.error('计算相关性失败:', error);
+      return 0;
+    }
+  }
+
+  // 添加重新排序的方法
+  reorderSearchResults() {
+    if (!this.filterSearchResults.length) return;
+
+    const container = this.filterSearchResults[0].element.parentElement;
+    if (!container) return;
+
+    // 临时创建一个文档片段来重新排序
+    const fragment = document.createDocumentFragment();
+    this.filterSearchResults.forEach(({element}) => {
+      fragment.appendChild(element);
+    });
+
+    // 清空原容器并添加排序后的结果
+    container.innerHTML = '';
+    container.appendChild(fragment);
+  }
+
+  // 将getVisibleText方法移到类级别
+  getVisibleText(element) {
+    if (element.offsetParent === null) return '';
+    
+    if (element.tagName === 'SCRIPT' || 
+        element.tagName === 'STYLE' || 
+        element.tagName === 'NOSCRIPT') {
+      return '';
+    }
+
+    let text = '';
+    for (const node of element.childNodes) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const trimmed = node.textContent.trim();
+        if (trimmed) text += trimmed + ' ';
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        text += this.getVisibleText(node) + ' ';
+      }
+    }
+    return text.trim();
   }
 }
 
 // 初始化内容分析器
 const analyzer = new ContentAnalyzer();
+
+// 注入悬浮选项
+const iframe = document.createElement('iframe');
+iframe.src = chrome.runtime.getURL('floating-options/floating-options.html');
+iframe.style.cssText = `
+  position: fixed;
+  border: none;
+  z-index: 9999;
+  background: transparent;
+  width: 400px;
+  height: 100vh;
+  right: 0;
+  top: 0;
+`;
+// 重要：移除 pointer-events: none
+// 添加允许交互的样式
+iframe.style.pointerEvents = 'auto';
+document.body.appendChild(iframe);
+
+// 添加消息监听，用于iframe和主页面的通信
+window.addEventListener('message', (event) => {
+  // 确保消息来自你的扩展
+  if (event.source === iframe.contentWindow) {
+    // 处理来自iframe的消息
+    console.log('Received message from iframe:', event.data);
+  }
+});
 
 /******/ })()
 ;

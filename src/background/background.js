@@ -34,7 +34,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 async function handleAIRequest(request) {
   console.log('Handling AI request:', request);
   try {
-    const { provider, model, apiKey, type, data } = request;
+    const { provider, model, apiKey, endpoint, data } = request;
     
     if (!provider || !model || !apiKey) {
       throw new Error('Missing required API configuration');
@@ -43,8 +43,8 @@ async function handleAIRequest(request) {
     // 确保 AI 管理器使用正确的配置
     aiManager.setProvider(provider, apiKey, model);
     
-    switch (type) {
-      case 'aiRequest':
+    switch (endpoint) {
+      case 'analyzeContent':
         const analysis = await aiManager.currentProvider.chat([
           {
             role: 'system',
@@ -52,7 +52,7 @@ async function handleAIRequest(request) {
           },
           {
             role: 'user',
-            content: `判断下面的HTML标签内容是否是广告，必须遵循这样的格式回复 {"isAd": true/false} : ${data.content}`
+            content: `根据用户的搜索内容：${data.searchQuery}，判断下面的HTML标签内容是否是广告，必须遵循这样的格式回复 {"isAd": true/false} : ${data.content}`
           }
         ]);
 
@@ -69,6 +69,35 @@ async function handleAIRequest(request) {
         } catch (e) {
           console.error('Failed to parse AI response:', e);
           return { isAd: false };
+        }
+
+      case 'calculateRelevance':
+        const relevanceAnalysis = await aiManager.currentProvider.chat([
+          {
+            role: 'system',
+            content: 'You are a search result relevance analyzer. Calculate the relevance score between the search query and content. Return a JSON response with a score between 0 and 1.'
+          },
+          {
+            role: 'user',
+            content: `计算搜索查询"${data.searchQuery}"与以下内容的相关性分数，返回格式 {"relevanceScore": 0.0-1.0}: ${data.content}`
+          }
+        ]);
+
+        if (!relevanceAnalysis?.choices?.[0]?.message?.content) {
+          throw new Error('Invalid API response format');
+        }
+
+        try {
+          const result = JSON.parse(relevanceAnalysis.choices[0].message.content);
+          if (typeof result.relevanceScore !== 'number' || 
+              result.relevanceScore < 0 || 
+              result.relevanceScore > 1) {
+            throw new Error('Invalid relevance score format');
+          }
+          return { relevanceScore: result.relevanceScore };
+        } catch (e) {
+          console.error('Failed to parse relevance score:', e);
+          return { relevanceScore: 0 };
         }
 
       default:

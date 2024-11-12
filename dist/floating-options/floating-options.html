@@ -17,7 +17,6 @@
       font-family: Arial, sans-serif;
     }
 
-    /* 收起状态 */
     .floating-options.collapsed {
       width: 48px;
       height: 48px;
@@ -25,9 +24,8 @@
       cursor: pointer;
     }
 
-    /* 展开状态 */
     .floating-options.expanded {
-      width: 320px;
+      width: 300px;
       max-height: 80vh;
       overflow-y: auto;
     }
@@ -45,31 +43,34 @@
       font-size: 20px;
     }
 
-    .settings-container {
+    .content-container {
       padding: 20px;
       display: none;
     }
 
-    .expanded .settings-container {
+    .expanded .content-container {
       display: block;
     }
 
-    .form-group {
-      margin-bottom: 15px;
+    .feature-toggles {
+      margin-bottom: 20px;
     }
 
-    .form-group label {
+    .feature-toggles label {
       display: block;
-      margin-bottom: 5px;
-      color: #333;
+      margin-bottom: 10px;
     }
 
-    select, input {
-      width: 100%;
-      padding: 8px;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      box-sizing: border-box;
+    .stats {
+      background-color: #f5f5f5;
+      padding: 10px;
+      border-radius: 5px;
+      margin-bottom: 20px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
     }
 
     button {
@@ -79,56 +80,45 @@
       padding: 8px 16px;
       border-radius: 4px;
       cursor: pointer;
-      margin-right: 8px;
     }
 
     button:hover {
       background: #1976D2;
-    }
-
-    #status {
-      margin-top: 10px;
-      padding: 8px;
-      border-radius: 4px;
-    }
-
-    .success {
-      background: #4CAF50;
-      color: white;
-    }
-
-    .error {
-      background: #f44336;
-      color: white;
     }
   </style>
 </head>
 <body>
   <div id="floatingOptions" class="floating-options collapsed">
     <button id="toggleButton" class="toggle-button">⚙️</button>
-    <div class="settings-container">
-      <h2>AI Provider Configuration</h2>
-      <div class="form-group">
-        <label for="provider">AI Provider:</label>
-        <select id="provider">
-          <!-- Options will be populated by JavaScript -->
-        </select>
+    <div class="content-container">
+      <h2>AI Browser Assistant</h2>
+      
+      <div class="feature-toggles">
+        <label>
+          <input type="checkbox" id="adBlockingToggle">
+          Ad Blocking
+        </label>
+        
+        <label>
+          <input type="checkbox" id="searchReorderingToggle">
+          Search Reordering
+        </label>
+        
+        <label>
+          <input type="checkbox" id="contextSuggestionsToggle">
+          Context Suggestions
+        </label>
       </div>
-      <div class="form-group">
-        <label for="model">Model:</label>
-        <select id="model">
-          <!-- Options will be populated by JavaScript -->
-        </select>
+
+      <div class="stats">
+        <div>Ads Blocked Today: <span id="adsBlockedCount">0</span></div>
+        <div>API Calls Today: <span id="apiCallsCount">0</span></div>
       </div>
-      <div class="form-group">
-        <label for="apiKey">API Key:</label>
-        <input type="password" id="apiKey">
-      </div>
+
       <div class="actions">
-        <button id="saveButton">Save</button>
-        <button id="debugButton">Debug</button>
+        <button id="settingsButton">Settings</button>
+        <button id="refreshButton">Refresh Page</button>
       </div>
-      <div id="status"></div>
     </div>
   </div>
   <script src="floating-options.js" type="module"></script>

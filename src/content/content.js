@@ -15,7 +15,14 @@ class ContentAnalyzer {
   constructor() {
     this.filterSearchResults = []; // 添加数组存储过滤后的搜索结果
     console.trace('ContentAnalyzer constructor called');
-    this.initialize();
+    this.features = {
+      adBlocking: true,
+      searchReordering: true,
+      contextSuggestions: true
+    };
+    this.loadFeatureSettings().then(() => {
+      this.initialize();
+    });
   }
 
   async initialize() {
@@ -43,68 +50,58 @@ class ContentAnalyzer {
   async analyzeExistingContent() {
     // 获取搜索关键词
     const searchQuery = this.getSearchQuery();
-    if (!searchQuery) return; // 如果没有搜索关键词则返回
+    if (!searchQuery) return;
     
-    // 根据不同搜索引擎选择合适的选择器
-    const isGoogle = window.location.hostname.includes('google');
-    const isBing = window.location.hostname.includes('bing');
-    const isBaidu = window.location.hostname.includes('baidu');
-
-    let searchResults = [];
-    if (isGoogle) {
-      searchResults = Array.from(document.querySelectorAll([
-        '#search .g',
-        '#rso .g',
-        'div[data-sokoban-grid]',
-        '.commercial-unit-desktop-top',
-        '.commercial-unit-desktop-rhs'
-      ].join(','))) || [];
-    } else if (isBing) {
-      searchResults = Array.from(document.querySelectorAll([
-        '#b_results > li',
-        '.b_ad',
-        '.b_algo',
-        '.b_sideBleed'
-      ].join(','))) || [];
-    } else if (isBaidu) {
-      searchResults = Array.from(document.querySelectorAll([
-        '#content_left > div',
-        '.result-op',
-        '.result',
-        '[cmatchid]',
-        '.ec_tuiguang_link',
-        '#content_right .cr-content',
-        '.c-container'
-      ].join(','))) || [];
-    }
-
+    // 获取搜索结果
+    const searchResults = this.getSearchResultsByEngine();
+    if (!searchResults.length) return;
+  
     // 清空之前的结果数组
     this.filterSearchResults = [];
-
+  
     // 创建一个Promise数组来存储所有分析任务
     const analysisPromises = searchResults.map(async result => {
-      const isAd = await this.analyzeSearchResult(result, searchQuery);
-      if (!isAd) {
-        // 获取相关性分数
-        const relevanceScore = await this.calculateRelevance(result, searchQuery);
+      let shouldInclude = true;
+      let relevanceScore = 0;
+  
+      // 广告分析
+      if (this.features.adBlocking) {
+        const isAd = await this.analyzeSearchResult(result, searchQuery);
+        if (isAd) {
+          result.classList.add('ai-assistant-blocked');
+          result.style.display = 'none';
+          shouldInclude = false;
+        } else {
+          result.classList.remove('ai-assistant-blocked');
+          result.style.display = '';
+        }
+      }
+  
+      // 相关性分析
+      if (shouldInclude) {
+        relevanceScore = this.features.searchReordering ? 
+          await this.calculateRelevance(result, searchQuery) : 
+          0;
+        
         return {
           element: result,
           score: relevanceScore
         };
       }
+  
       return null;
     });
-
+  
     // 等待所有分析完成
     const results = await Promise.all(analysisPromises);
     
-    // 过滤掉广告（null值）并按相关性分数排序
-    this.filterSearchResults = results
-      .filter(item => item !== null)
-      .sort((a, b) => b.score - a.score);
-
-    // 重新排序DOM元素
-    this.reorderSearchResults();
+    // 过滤并排序结果
+    this.filterSearchResults = results.filter(item => item !== null);
+    
+    if (this.features.searchReordering) {
+      this.filterSearchResults.sort((a, b) => b.score - a.score);
+      this.reorderSearchResults();
+    }
   }
 
   setupMutationObserver() {
@@ -141,20 +138,19 @@ class ContentAnalyzer {
     }
   }
 
-  async analyzeForAd(content,searchQuery) {
+  async analyzeForAd(content, searchQuery) {
+    // 如果广告拦截被禁用，直接返回 false
+    if (!this.features.adBlocking) {
+      return false;
+    }
+    
     try {
-        try {
-          // 使用 AI 进行进一步分析
-          const response = await this.makeAPIRequest('analyzeContent', { content,searchQuery });
-          return response && response.isAd === true;
-        } catch (apiError) {
-          console.warn('AI analysis failed, falling back to heuristic detection:', apiError);
-          // 如果 API 调用失败，回退到基于启发式的判断
-          return isLikelyAd;
-        }
+      const response = await this.makeAPIRequest('analyzeContent', { content, searchQuery });
+      // 只返回分析结果，不在这里处理 DOM
+      return response && response.isAd === true;
     } catch (error) {
       console.error('Ad analysis failed:', error);
-      return false; // 出错时默认不屏蔽内容
+      return false;
     }
   }
 
@@ -247,33 +243,23 @@ class ContentAnalyzer {
     });
   }
 
-  analyzeSearchResult(result, searchQuery) {
-    // 提取所有可见文本的辅助函数
-    const getVisibleText = (element) => {
-      if (element.offsetParent === null) return '';
-      
-      if (element.tagName === 'SCRIPT' || 
-          element.tagName === 'STYLE' || 
-          element.tagName === 'NOSCRIPT') {
-        return '';
-      }
-
-      let text = '';
-      for (const node of element.childNodes) {
-        if (node.nodeType === Node.TEXT_NODE) {
-          const trimmed = node.textContent.trim();
-          if (trimmed) text += trimmed + ' ';
-        } else if (node.nodeType === Node.ELEMENT_NODE) {
-          text += getVisibleText(node) + ' ';
-        }
-      }
-      return text.trim();
-    };
-
-    // 获取所有可见文本
-    const allText = getVisibleText(result);
-    // 进行内容分析，传入搜索查询
-    return this.analyzeForAd(allText, searchQuery);
+  async analyzeSearchResult(result, searchQuery) {
+    // 提取所有可见文本
+    const allText = this.getVisibleText(result);
+    
+    // 进行内容分析
+    const isAd = await this.analyzeForAd(allText, searchQuery);
+    
+    // 在这里处理 DOM 元素的显示/隐藏
+    if (isAd && this.features.adBlocking) {
+      result.classList.add('ai-assistant-blocked');
+      result.style.display = 'none';
+    } else {
+      result.classList.remove('ai-assistant-blocked');
+      result.style.display = '';
+    }
+    
+    return isAd;
   }
 
   getSearchQuery() {
@@ -315,23 +301,38 @@ class ContentAnalyzer {
 
   // 添加重新排序的方法
   reorderSearchResults() {
-    if (!this.filterSearchResults.length) return;
+    if (!this.features.searchReordering || !this.filterSearchResults?.length) {
+      return;
+    }
 
+    // 获取第一个元素的父容器
     const container = this.filterSearchResults[0].element.parentElement;
     if (!container) return;
 
     // 临时创建一个文档片段来重新排序
     const fragment = document.createDocumentFragment();
-    this.filterSearchResults.forEach(({element}) => {
+    
+    // 先将所有元素从 DOM 中移除，并存储到新数组中
+    const elements = this.filterSearchResults.map(result => {
+      const element = result.element;
+      const clone = element.cloneNode(true); // 克隆节点
+      clone.classList.add('ai-assistant-reordered');
+      return clone;
+    });
+
+    // 将克隆的元素添加到文档片段中
+    elements.forEach(element => {
       fragment.appendChild(element);
     });
 
-    // 清空原容器并添加排序后的结果
+    // 清空原容器
     container.innerHTML = '';
+    
+    // 将重排序后的元素一次性添加回容器
     container.appendChild(fragment);
   }
 
-  // 将getVisibleText方法移到类级别
+  // 将 getVisibleText 方法移到类的方法中
   getVisibleText(element) {
     if (element.offsetParent === null) return '';
     
@@ -351,6 +352,106 @@ class ContentAnalyzer {
       }
     }
     return text.trim();
+  }
+
+  async loadFeatureSettings() {
+    try {
+      const { features = {} } = await chrome.storage.sync.get('features');
+      this.features = {
+        adBlocking: false,
+        searchReordering: false,
+        contextSuggestions: true,
+        ...features
+      };
+      console.log('Loaded features:', this.features);
+    } catch (error) {
+      console.error('Failed to load feature settings:', error);
+    }
+  }
+
+  setAdBlockingEnabled(enabled) {
+    this.features.adBlocking = enabled;
+    
+    // 如果禁用了广告拦截，恢复之前隐藏的广告
+    if (!enabled) {
+      document.querySelectorAll('.ai-assistant-blocked').forEach(el => {
+        el.classList.remove('ai-assistant-blocked');
+        el.style.display = ''; // 恢复显示
+      });
+    }
+    
+    // 重新分析当前页面内容
+    this.analyzeExistingContent();
+  }
+
+  // 辅助方法：根据不同搜索引擎获取搜索结果
+  getSearchResultsByEngine() {
+    const isGoogle = window.location.hostname.includes('google');
+    const isBing = window.location.hostname.includes('bing');
+    const isBaidu = window.location.hostname.includes('baidu');
+
+    if (isGoogle) {
+      return Array.from(document.querySelectorAll([
+        '#search .g',
+        '#rso .g',
+        'div[data-sokoban-grid]',
+        '.commercial-unit-desktop-top',
+        '.commercial-unit-desktop-rhs'
+      ].join(','))) || [];
+    } 
+    
+    if (isBing) {
+      return Array.from(document.querySelectorAll([
+        '#b_results > li',
+        '.b_ad',
+        '.b_algo',
+        '.b_sideBleed'
+      ].join(','))) || [];
+    } 
+    
+    if (isBaidu) {
+      return Array.from(document.querySelectorAll([
+        '#content_left > div',
+        '.result-op',
+        '.result',
+        '[cmatchid]',
+        '.ec_tuiguang_link',
+        '#content_right .cr-content',
+        '.c-container'
+      ].join(','))) || [];
+    }
+
+    return [];
+  }
+
+  setSearchReorderingEnabled(enabled) {
+    this.features.searchReordering = enabled;
+    
+    if (!enabled) {
+      // 移除所有重排序相关的类和样式
+      document.querySelectorAll('.ai-assistant-reordered').forEach(el => {
+        el.classList.remove('ai-assistant-reordered');
+        el.style.order = ''; // 移除排序样式
+      });
+      
+      // 恢复原始顺序
+      const container = this.filterSearchResults[0]?.element.parentElement;
+      if (container) {
+        // 获取所有搜索结果
+        const results = this.getSearchResultsByEngine();
+        
+        // 清空容器
+        container.innerHTML = '';
+        
+        // 按原始顺序重新添加元素
+        results.forEach(result => {
+          container.appendChild(result);
+        });
+      }
+    }
+    
+    // 重新分析当前页面内容
+    this.analyzeExistingContent();
   }
 }
 
@@ -383,3 +484,29 @@ window.addEventListener('message', (event) => {
     console.log('Received message from iframe:', event.data);
   }
 });
+
+// 在现有的消息监听器中添加处理逻辑
+window.addEventListener('message', (event) => {
+  // 确保消息来自你的扩展
+  if (event.source === iframe.contentWindow) {
+    const { type, feature, enabled } = event.data;
+    
+    if (type === 'updateFeature') {
+      switch (feature) {
+        case 'adBlocking':
+          // 更新广告拦截状态
+          analyzer.setAdBlockingEnabled(enabled);
+          break;
+        case 'searchReordering':
+          // 更新搜索重排序状态
+          analyzer.setSearchReorderingEnabled(enabled);
+          break;
+        case 'contextSuggestions':
+          // 更新上下文建议状态
+          analyzer.setContextSuggestionsEnabled(enabled);
+          break;
+      }
+    }
+  }
+});
+

@@ -19,152 +19,108 @@ window.addEventListener('unhandledrejection', event => {
 
 class FloatingOptions {
   constructor() {
-    try {
-      this.container = document.getElementById('floatingOptions');
-      if (!this.container) {
-        throw new Error('Container element not found');
-      }
-      
-      this.toggleButton = document.getElementById('toggleButton');
-      this.providerSelect = document.getElementById('provider');
-      this.modelSelect = document.getElementById('model');
-      this.apiKeyInput = document.getElementById('apiKey');
-      this.saveButton = document.getElementById('saveButton');
-      this.debugButton = document.getElementById('debugButton');
-      this.statusDiv = document.getElementById('status');
-      
-      this.isDragging = false;
-      this.startY = 0;
-      this.startTop = 0;
+    this.elements = {
+      container: document.getElementById('floatingOptions'),
+      toggleButton: document.getElementById('toggleButton'),
+      adBlockingToggle: document.getElementById('adBlockingToggle'),
+      searchReorderingToggle: document.getElementById('searchReorderingToggle'),
+      contextSuggestionsToggle: document.getElementById('contextSuggestionsToggle'),
+      adsBlockedCount: document.getElementById('adsBlockedCount'),
+      apiCallsCount: document.getElementById('apiCallsCount'),
+      settingsButton: document.getElementById('settingsButton'),
+      refreshButton: document.getElementById('refreshButton')
+    };
 
-      this.initialize();
-    } catch (error) {
-      console.error('FloatingOptions initialization error:', error);
-    }
+    this.initialize();
   }
 
   async initialize() {
-    try {
-      await this.setupEventListeners();
-      await this.loadProviders();
-      await this.loadSettings();
-      this.loadPosition();
-    } catch (error) {
-      console.error('Initialization error:', error);
-      this.showStatus('Failed to initialize: ' + error.message, 'error');
-    }
+    await this.loadSettings();
+    await this.loadStats();
+    this.setupEventListeners();
   }
 
   setupEventListeners() {
-    this.toggleButton.addEventListener('click', () => this.toggleExpand());
-    this.saveButton.addEventListener('click', () => this.saveSettings());
-    this.debugButton.addEventListener('click', () => this.debugStorage());
-    this.providerSelect.addEventListener('change', () => this.updateModelList());
-    this.container.addEventListener('mousedown', (e) => this.startDrag(e));
-    document.addEventListener('mousemove', (e) => this.drag(e));
-    document.addEventListener('mouseup', () => this.stopDrag());
-  }
+    this.elements.toggleButton.addEventListener('click', () => this.toggleExpand());
+    
+    // 特性开关的事件监听器
+    this.elements.adBlockingToggle?.addEventListener('change', (e) => 
+      this.updateFeature('adBlocking', e.target.checked));
+    
+    this.elements.searchReorderingToggle?.addEventListener('change', (e) => 
+      this.updateFeature('searchReordering', e.target.checked));
+    
+    this.elements.contextSuggestionsToggle?.addEventListener('change', (e) => 
+      this.updateFeature('contextSuggestions', e.target.checked));
 
-  async loadProviders() {
-    const providers = [
-      { id: 'siliconflow', name: 'Silicon Flow' },
-      { id: 'openai', name: 'OpenAI' },
-      { id: 'claude', name: 'Claude' }
-    ];
-
-    providers.forEach(provider => {
-      const option = document.createElement('option');
-      option.value = provider.id;
-      option.textContent = provider.name;
-      this.providerSelect.appendChild(option);
+    // Settings 按钮事件监听器
+    this.elements.settingsButton?.addEventListener('click', () => {
+      if (chrome.runtime.openOptionsPage) {
+        chrome.runtime.openOptionsPage();
+      }
     });
-  }
 
-  async updateModelList() {
-    const providerId = this.providerSelect.value;
-    this.modelSelect.innerHTML = '';
-
-    const models = {
-      siliconflow: [
-        { id: 'qwen/qwen-turbo', name: 'Qwen Turbo' },
-        { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo' }
-      ],
-      openai: [
-        { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo' },
-        { id: 'gpt-4', name: 'GPT-4' }
-      ],
-      claude: [
-        { id: 'claude-2', name: 'Claude 2' },
-        { id: 'claude-instant', name: 'Claude Instant' }
-      ]
-    };
-
-    models[providerId]?.forEach(model => {
-      const option = document.createElement('option');
-      option.value = model.id;
-      option.textContent = model.name;
-      this.modelSelect.appendChild(option);
+    // Refresh Page 按钮事件监听器
+    this.elements.refreshButton?.addEventListener('click', async () => {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab?.id) {
+        chrome.tabs.reload(tab.id);
+      }
     });
   }
 
   async loadSettings() {
-    const settings = await chrome.storage.sync.get({
-      aiProvider: 'siliconflow',
-      aiModel: 'qwen/qwen-turbo',
-      apiKeys: {}
-    });
-
-    this.providerSelect.value = settings.aiProvider;
-    await this.updateModelList();
-    this.modelSelect.value = settings.aiModel;
-    this.apiKeyInput.value = settings.apiKeys[settings.aiProvider] || '';
-  }
-
-  async saveSettings() {
     try {
-      const provider = this.providerSelect.value;
-      const model = this.modelSelect.value;
-      const apiKey = this.apiKeyInput.value;
+      const { features = {} } = await chrome.storage.sync.get('features');
+      
+      const defaultFeatures = {
+        adBlocking: true,
+        searchReordering: true,
+        contextSuggestions: true,
+        ...features
+      };
 
-      await chrome.storage.sync.set({
-        aiProvider: provider,
-        aiModel: model,
-        apiKeys: {
-          [provider]: apiKey
-        }
-      });
-
-      this.showStatus('Settings saved successfully!', 'success');
+      if (this.elements.adBlockingToggle) {
+        this.elements.adBlockingToggle.checked = defaultFeatures.adBlocking;
+      }
+      if (this.elements.searchReorderingToggle) {
+        this.elements.searchReorderingToggle.checked = defaultFeatures.searchReordering;
+      }
+      if (this.elements.contextSuggestionsToggle) {
+        this.elements.contextSuggestionsToggle.checked = defaultFeatures.contextSuggestions;
+      }
     } catch (error) {
-      this.showStatus('Error saving settings: ' + error.message, 'error');
+      console.error('Failed to load settings:', error);
     }
   }
 
-  async debugStorage() {
-    const settings = await chrome.storage.sync.get(null);
-    console.log('Current storage:', settings);
-    this.showStatus('Check console for debug info', 'success');
-  }
+  async loadStats() {
+    try {
+      const { dailyStats = {} } = await chrome.storage.local.get('dailyStats');
+      const today = new Date().toDateString();
+      const todayStats = dailyStats[today] || { adsBlocked: 0, apiCalls: 0 };
 
-  showStatus(message, type) {
-    this.statusDiv.textContent = message;
-    this.statusDiv.className = type;
-    setTimeout(() => {
-      this.statusDiv.textContent = '';
-      this.statusDiv.className = '';
-    }, 3000);
+      if (this.elements.adsBlockedCount) {
+        this.elements.adsBlockedCount.textContent = todayStats.adsBlocked;
+      }
+      if (this.elements.apiCallsCount) {
+        this.elements.apiCallsCount.textContent = todayStats.apiCalls;
+      }
+    } catch (error) {
+      console.error('Failed to load stats:', error);
+    }
   }
 
   toggleExpand() {
-    this.container.classList.toggle('collapsed');
-    this.container.classList.toggle('expanded');
+    this.elements.container.classList.toggle('collapsed');
+    this.elements.container.classList.toggle('expanded');
   }
 
   startDrag(e) {
-    if (e.target === this.toggleButton) {
+    if (e.target === this.elements.toggleButton) {
       this.isDragging = true;
       this.startY = e.clientY;
-      this.startTop = this.container.offsetTop;
+      this.startTop = this.elements.container.offsetTop;
     }
   }
 
@@ -174,10 +130,10 @@ class FloatingOptions {
     const deltaY = e.clientY - this.startY;
     const newTop = this.startTop + deltaY;
     
-    const maxTop = window.innerHeight - this.container.offsetHeight;
+    const maxTop = window.innerHeight - this.elements.container.offsetHeight;
     const boundedTop = Math.max(0, Math.min(newTop, maxTop));
     
-    this.container.style.top = boundedTop + 'px';
+    this.elements.container.style.top = boundedTop + 'px';
     this.savePosition(boundedTop);
   }
 
@@ -192,18 +148,60 @@ class FloatingOptions {
   loadPosition() {
     chrome.storage.sync.get(['floatingOptionsPosition'], (result) => {
       if (result.floatingOptionsPosition !== undefined) {
-        this.container.style.top = result.floatingOptionsPosition + 'px';
+        this.elements.container.style.top = result.floatingOptionsPosition + 'px';
       }
     });
   }
+
+  async updateFeature(featureName, enabled) {
+    try {
+      // 获取当前特性设置
+      const { features = {} } = await chrome.storage.sync.get('features');
+      
+      // 更新特定特性
+      const updatedFeatures = {
+        ...features,
+        [featureName]: enabled
+      };
+
+      // 保存到存储
+      await chrome.storage.sync.set({ features: updatedFeatures });
+
+      // 通知内容脚本更新
+      try {
+        // 由于我们在 iframe 中，需要通过 postMessage 发送消息到父页面
+        window.parent.postMessage({
+          type: 'updateFeature',
+          feature: featureName,
+          enabled
+        }, '*');
+
+        // 同时通知其他标签页
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab?.id) {
+          await chrome.tabs.sendMessage(tab.id, {
+            type: 'updateFeature',
+            feature: featureName,
+            enabled
+          });
+        }
+      } catch (error) {
+        console.warn('Failed to notify content script:', error);
+      }
+    } catch (error) {
+      console.error('Failed to update feature:', error);
+      // 回滚 UI 状态
+      const toggle = this.elements[`${featureName}Toggle`];
+      if (toggle) {
+        toggle.checked = !enabled;
+      }
+    }
+  }
 }
 
+// 初始化
 document.addEventListener('DOMContentLoaded', () => {
-  try {
-    new FloatingOptions();
-  } catch (error) {
-    console.error('Failed to create FloatingOptions:', error);
-  }
+  new FloatingOptions();
 }); 
 /******/ })()
 ;

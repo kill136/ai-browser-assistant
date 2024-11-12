@@ -5,12 +5,12 @@
   <style>
     .floating-options {
       position: fixed;
-      right: 20px;
+      right: 0;
       top: 50%;
       transform: translateY(-50%);
       background: #fff;
-      border-radius: 12px;
-      box-shadow: 0 2px 20px rgba(0,0,0,0.15);
+      border-radius: 24px 0 0 24px;
+      box-shadow: -2px 0 20px rgba(0,0,0,0.15);
       z-index: 9999;
       overflow: hidden;
       transition: all 0.3s ease;
@@ -20,14 +20,20 @@
     .floating-options.collapsed {
       width: 48px;
       height: 48px;
-      border-radius: 24px;
-      cursor: pointer;
     }
 
     .floating-options.expanded {
       width: 300px;
+      height: auto;
+      min-height: 400px;
       max-height: 80vh;
-      overflow-y: auto;
+      border-radius: 12px 0 0 12px;
+    }
+
+    .toggle-button-container {
+      pointer-events: auto;
+      width: 48px;
+      height: 48px;
     }
 
     .toggle-button {
@@ -41,11 +47,18 @@
       border: none;
       cursor: pointer;
       font-size: 20px;
+      pointer-events: auto;
     }
 
     .content-container {
-      padding: 20px;
+      pointer-events: auto;
       display: none;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 20px rgba(0,0,0,0.15);
+      padding: 20px;
+      height: 100%;
+      overflow-y: auto;
     }
 
     .expanded .content-container {
@@ -89,7 +102,9 @@
 </head>
 <body>
   <div id="floatingOptions" class="floating-options collapsed">
-    <button id="toggleButton" class="toggle-button">⚙️</button>
+    <div class="toggle-button-container">
+      <button id="toggleButton" class="toggle-button">⚙️</button>
+    </div>
     <div class="content-container">
       <h2>AI Browser Assistant</h2>
       

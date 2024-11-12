@@ -65,31 +65,41 @@ class ContentAnalyzer {
   
     // 创建一个Promise数组来存储所有分析任务
     const analysisPromises = searchResults.map(async result => {
+      // 如果是答案框，直接返回，不做处理
+      if (result.isAnswer) {
+        return {
+          element: result.element,
+          score: 0,
+          isAnswer: true
+        };
+      }
+
       let shouldInclude = true;
       let relevanceScore = 0;
   
       // 广告分析
       if (this.features.adBlocking) {
-        const isAd = await this.analyzeSearchResult(result, searchQuery);
+        const isAd = await this.analyzeSearchResult(result.element, searchQuery);
         if (isAd) {
-          result.classList.add('ai-assistant-blocked');
-          result.style.display = 'none';
+          result.element.classList.add('ai-assistant-blocked');
+          result.element.style.display = 'none';
           shouldInclude = false;
         } else {
-          result.classList.remove('ai-assistant-blocked');
-          result.style.display = '';
+          result.element.classList.remove('ai-assistant-blocked');
+          result.element.style.display = '';
         }
       }
   
-      // 相关性分析
+      // 关性分析
       if (shouldInclude) {
         relevanceScore = this.features.searchReordering ? 
-          await this.calculateRelevance(result, searchQuery) : 
+          await this.calculateRelevance(result.element, searchQuery) : 
           0;
         
         return {
-          element: result,
-          score: relevanceScore
+          element: result.element,
+          score: relevanceScore,
+          isAnswer: false
         };
       }
   
@@ -99,13 +109,16 @@ class ContentAnalyzer {
     // 等待所有分析完成
     const results = await Promise.all(analysisPromises);
     
-    // 过滤并排序结果
-    this.filterSearchResults = results.filter(item => item !== null);
-    
-    if (this.features.searchReordering) {
-      this.filterSearchResults.sort((a, b) => b.score - a.score);
-      this.reorderSearchResults();
-    }
+    // 过滤并排序结果，答案框保持原位
+    this.filterSearchResults = results
+      .filter(item => item !== null)
+      .sort((a, b) => {
+        // 如果其中一个是答案框，保持原位
+        if (a.isAnswer) return -1;
+        if (b.isAnswer) return 1;
+        // 否则按分数排序
+        return b.score - a.score;
+      });
   }
 
   setupMutationObserver() {
@@ -123,7 +136,7 @@ class ContentAnalyzer {
       }
     });
 
-    // 配置观察选项
+    // 配置察选项
     observer.observe(document.body, {
       childList: true,
       subtree: true
@@ -393,8 +406,9 @@ class ContentAnalyzer {
     const isGoogle = window.location.hostname.includes('google');
     const isBing = window.location.hostname.includes('bing');
     const isBaidu = window.location.hostname.includes('baidu');
-
+  
     if (isGoogle) {
+      // Google 的选择器保持不变
       return Array.from(document.querySelectorAll([
         '#search .g',
         '#rso .g',
@@ -405,14 +419,28 @@ class ContentAnalyzer {
     } 
     
     if (isBing) {
-      return Array.from(document.querySelectorAll([
-        '#b_results > li',
-        '.b_ad',
-        '.b_algo',
-        '.b_sideBleed'
-      ].join(','))) || [];
+      // 获取所有搜索结果，包括答案框
+      const allResults = Array.from(document.querySelectorAll('#b_results > li'));
+      
+      // 将结果分为答案框和普通结果
+      return allResults.map(result => {
+        if (result.classList.contains('b_ans')) {
+          // 标记为答案框，不参与处理
+          return {
+            element: result,
+            isAnswer: true
+          };
+        } else {
+          // 普通结果，参与处理
+          return {
+            element: result,
+            isAnswer: false
+          };
+        }
+      });
     } 
     
+    // Baidu 的择持不变
     if (isBaidu) {
       return Array.from(document.querySelectorAll([
         '#content_left > div',
@@ -424,7 +452,7 @@ class ContentAnalyzer {
         '.c-container'
       ].join(','))) || [];
     }
-
+  
     return [];
   }
 
@@ -468,16 +496,33 @@ iframe.src = chrome.runtime.getURL('floating-options/floating-options.html');
 iframe.style.cssText = `
   position: fixed;
   border: none;
-  z-index: 9999;
+  z-index: 2147483647;
   background: transparent;
-  width: 400px;
-  height: 100vh;
+  width: 48px;
+  height: 48px;
   right: 0;
-  top: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  border-radius: 24px 0 0 24px;
+  transition: all 0.3s ease;
+  box-shadow: -2px 0 20px rgba(0,0,0,0.1);
 `;
-// 重要：移除 pointer-events: none
-// 添加允许交互的样式
-iframe.style.pointerEvents = 'auto';
+
+// 监听展开/收起消息
+window.addEventListener('message', (event) => {
+  if (event.source === iframe.contentWindow && event.data.type === 'toggleExpand') {
+    if (event.data.expanded) {
+      iframe.style.width = '300px';
+      iframe.style.height = '400px';  // 展开时设置固定高度
+      iframe.style.borderRadius = '12px 0 0 12px';
+    } else {
+      iframe.style.width = '48px';
+      iframe.style.height = '48px';
+      iframe.style.borderRadius = '24px 0 0 24px';
+    }
+  }
+});
+
 document.body.appendChild(iframe);
 
 // 添加消息监听，用于iframe和主页面的通信

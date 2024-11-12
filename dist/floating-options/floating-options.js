@@ -112,8 +112,15 @@ class FloatingOptions {
   }
 
   toggleExpand() {
+    const isExpanding = this.elements.container.classList.contains('collapsed');
     this.elements.container.classList.toggle('collapsed');
     this.elements.container.classList.toggle('expanded');
+    
+    // 通知父页面切换鼠标事件
+    window.parent.postMessage({
+      type: 'toggleExpand',
+      expanded: isExpanding
+    }, '*');
   }
 
   startDrag(e) {

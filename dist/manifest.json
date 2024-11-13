@@ -2,7 +2,9 @@
   "manifest_version": 3,
   "name": "AI Browser Assistant",
   "version": "1.0.0",
-  "description": "AI-powered browser assistant",
+  "description": "AI-powered browser assistant for smart content filtering and suggestions",
+  "author": "wbj",
+  "homepage_url": "https://github.com/kill136/ai-browser-assistant",
   "permissions": [
     "storage",
     "activeTab",
@@ -53,7 +55,9 @@
       "options/options.html",
       "popup/popup.html",
       "popup/popup.js",
-      "popup/popup.css"
+      "popup/popup.css",
+      "reading-mode/reading-mode.html",
+      "reading-mode/reading-mode.js"
     ],
     "matches": ["<all_urls>"]
   }]

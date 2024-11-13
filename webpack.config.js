@@ -8,7 +8,8 @@ module.exports = {
     options: './src/options/options.js',
     content: './src/content/content.js',
     background: './src/background/background.js',
-    'floating-options': './src/floating-options/floating-options.js'
+    'floating-options': './src/floating-options/floating-options.js',
+    'reading-mode': './src/reading-mode/reading-mode.js'
   },
   output: {
     path: path.resolve(__dirname, 'dist'),
@@ -51,8 +52,11 @@ module.exports = {
         {
           from: "src/floating-options/floating-options.html",
           to: "floating-options/floating-options.html"
+        },
+        {
+          from: "src/reading-mode/reading-mode.html",
+          to: "reading-mode/reading-mode.html"
         }
-       
       ],
     }),
   ],

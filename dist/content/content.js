@@ -1,7 +1,12 @@
 /******/ (() => { // webpackBootstrap
+/******/ 	var __webpack_modules__ = ({
+
+/***/ "./src/content/content.js":
 /*!********************************!*\
   !*** ./src/content/content.js ***!
   \********************************/
+/***/ (function() {
+
 // 将需要导入的内容直接定义在文件中
 const CONFIG = {
   adIndicators: [
@@ -22,10 +27,61 @@ class ContentAnalyzer {
     this.features = {
       adBlocking: true,
       searchReordering: true,
-      contextSuggestions: true
+      contextSuggestions: true,
+      readingMode: false
     };
+    
+    this.readingState = {
+      summary: '',
+      keywords: [],
+      readingProgress: 0,
+      isReadingMode: false
+    };
+
+    // 修改初始化流程
     this.loadFeatureSettings().then(() => {
       this.initialize();
+      // 如果阅读模式是开启的，自动重新启用
+      if (this.features.readingMode && !this.readingModeIframe) {
+        this.readingState.isReadingMode = true;
+        this.enableReadingMode();
+      }
+    });
+
+    this.progressInterval = null; // 添加进度更新定时器引用
+    this.readingModeIframe = null;
+
+    // 添加消息监听器到实例
+    this.setupMessageListeners();
+  }
+
+  setupMessageListeners() {
+    window.addEventListener('message', (event) => {
+      if (event.source === this.readingModeIframe?.contentWindow) {
+        console.log('Received message from reading mode:', event.data);
+        
+        const { type } = event.data;
+        
+        if (type === 'closeReadingMode') {
+          console.log('Processing close reading mode');
+          
+          // 更新功能状态
+          this.features.readingMode = false;
+          this.readingState.isReadingMode = false;
+          
+          // 关闭阅读模式
+          this.disableReadingMode();
+          
+          // 更新 floating-options 中的开关状态
+          if (window.floatingOptionsIframe) {
+            window.floatingOptionsIframe.contentWindow.postMessage({
+              type: 'updateToggleState',
+              feature: 'readingMode',
+              enabled: false
+            }, '*');
+          }
+        }
+      }
     });
   }
 
@@ -35,7 +91,7 @@ class ContentAnalyzer {
       const config = await this.getAPIConfig();
       console.log('Initialized with config:', config);
       
-      // 等待 DOM 加载完成
+      // 待 DOM 加载完成
       if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => this.onDOMReady());
       } else {
@@ -264,7 +320,7 @@ class ContentAnalyzer {
     // 提取所有可见文本
     const allText = this.getVisibleText(result);
     
-    // 进行内容分析
+    // 进行内分析
     const isAd = await this.analyzeForAd(allText, searchQuery);
     
     // 在这里处理 DOM 元素的显示/隐藏
@@ -378,8 +434,16 @@ class ContentAnalyzer {
         adBlocking: false,
         searchReordering: false,
         contextSuggestions: true,
+        readingMode: true,
         ...features
       };
+      
+      // 如果阅读模式默认开启，则自动启用
+      if (this.features.readingMode) {
+        this.readingState.isReadingMode = true;
+        this.enableReadingMode();
+      }
+      
       console.log('Loaded features:', this.features);
     } catch (error) {
       console.error('Failed to load feature settings:', error);
@@ -485,6 +549,270 @@ class ContentAnalyzer {
     // 重新分析当前页面内容
     this.analyzeExistingContent();
   }
+
+  // 切换阅读模式
+  toggleReadingMode() {
+    if (!this.features.readingMode) {
+      console.warn('Reading mode feature is disabled');
+      return;
+    }
+
+    this.readingState.isReadingMode = !this.readingState.isReadingMode;
+    
+    if (this.readingState.isReadingMode) {
+      this.enableReadingMode();
+    } else {
+      this.disableReadingMode();
+      // 清除进度更新定时器
+      if (this.progressInterval) {
+        clearInterval(this.progressInterval);
+        this.progressInterval = null;
+      }
+    }
+  }
+
+  // 启用阅读模
+  async enableReadingMode() {
+    if (!this.features.readingMode) return;
+
+    // 获取主要内容
+    const mainContent = this.getMainContent();
+    if (!mainContent) {
+        console.warn('No main content found, retrying...');
+        setTimeout(() => this.enableReadingMode(), 1000);
+        return;
+    }
+
+    try {
+        // 生成摘要和关键词（提前生成）
+        const analysis = await this.analyzeContent(mainContent);
+        console.log('Content analysis completed:', analysis);
+
+        // 创建一个 Promise 来处理 iframe 加载和内容发送
+        const setupIframe = () => {
+            return new Promise((resolve) => {
+                // 创建 iframe
+                if (!this.readingModeIframe) {
+                    this.readingModeIframe = document.createElement('iframe');
+                    this.readingModeIframe.id = 'reading-mode-iframe';
+                    this.readingModeIframe.src = chrome.runtime.getURL('reading-mode/reading-mode.html');
+                    this.readingModeIframe.style.cssText = `
+                        position: fixed;
+                        border: none;
+                        z-index: 2147483646;
+                        background: transparent;
+                        width: 320px;
+                        height: 80vh;
+                        right: 20px;
+                        top: 20px;
+                    `;
+
+                    // 确保 load 事件在添加到 DOM 之前绑定
+                    this.readingModeIframe.addEventListener('load', () => {
+                        console.log('Reading mode iframe loaded');
+                        // 发送内容
+                        if (this.readingModeIframe?.contentWindow) {
+                            console.log('Sending content to reading mode:', analysis);
+                            this.readingModeIframe.contentWindow.postMessage({
+                                type: 'updateContent',
+                                content: analysis
+                            }, '*');
+                        }
+                        resolve();
+                    });
+
+                    document.body.appendChild(this.readingModeIframe);
+                } else {
+                    // 如果 iframe 已存在，直接发送内容
+                    this.readingModeIframe.contentWindow.postMessage({
+                        type: 'updateContent',
+                        content: analysis
+                    }, '*');
+                    resolve();
+                }
+            });
+        };
+
+        // 等待 iframe 设置完成
+        await setupIframe();
+        
+        // 添加滚动监听
+        this.setupScrollTracking();
+        
+        // 高亮关键词
+        if (analysis.keywords?.length) {
+            this.highlightKeywords(analysis.keywords);
+        }
+
+    } catch (error) {
+        console.error('Failed to enable reading mode:', error);
+    }
+}
+  // 获取页面主要内容
+  getMainContent() {
+    // 常见的主要内容容器选择器
+    const selectors = [
+      'article',
+      '[role="main"]',
+      '#main-content',
+      '.main-content',
+      'main',
+      '.post-content',
+      '.article-content'
+    ];
+    for (const selector of selectors) {
+      const element = document.querySelector(selector);
+      if (element) return element;
+    }
+
+    // 如果找不到特定容器，尝智能识别最可能的主要内容区域
+    return this.findMainContentArea();
+  }
+
+  // 智能识别主要内容区域
+  findMainContentArea() {
+    const paragraphs = document.getElementsByTagName('p');
+    if (paragraphs.length === 0) return null;
+
+    // 找到包含最多段落的容器
+    const containers = new Map();
+    
+    for (const p of paragraphs) {
+      let parent = p.parentElement;
+      while (parent && parent !== document.body) {
+        containers.set(parent, (containers.get(parent) || 0) + 1);
+        parent = parent.parentElement;
+      }
+    }
+
+    // 按段落数量排序
+    const sorted = [...containers.entries()].sort((a, b) => b[1] - a[1]);
+    return sorted[0]?.[0] || null;
+  }
+
+  // 分析内容生成摘要和关键词
+  async analyzeContent(content) {
+    const text = this.getVisibleText(content);
+    
+    try {
+      const response = await this.makeAPIRequest('analyzeReading', {
+        content: text
+      });
+
+      return {
+        summary: response.summary || '',
+        keywords: response.keywords || []
+      };
+    } catch (error) {
+      console.error('Content analysis failed:', error);
+      return { summary: '', keywords: [] };
+    }
+  }
+
+  // 设置滚动跟踪
+  setupScrollTracking() {
+    const content = this.getMainContent();
+    if (!content) return;
+
+    const updateProgress = () => {
+      const rect = content.getBoundingClientRect();
+      const totalHeight = content.scrollHeight;
+      const visibleHeight = window.innerHeight;
+      const scrolled = window.scrollY - rect.top;
+      
+      const progress = Math.min(100, Math.max(0, 
+        (scrolled / (totalHeight - visibleHeight)) * 100
+      ));
+
+      this.readingState.readingProgress = progress;
+      
+      // 更新进度条
+      const progressBar = document.querySelector('.ai-reading-assistant .progress');
+      if (progressBar) {
+        progressBar.style.width = `${progress}%`;
+      }
+    };
+
+    window.addEventListener('scroll', updateProgress);
+    updateProgress(); // 初始化进度
+  }
+
+  // 高亮关键词
+  highlightKeywords(keywords) {
+    const content = this.getMainContent();
+    if (!content || !keywords.length) return;
+
+    const highlightText = (node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        let text = node.textContent;
+        let highlighted = false;
+
+        keywords.forEach(keyword => {
+          const regex = new RegExp(`(${keyword})`, 'gi');
+          if (regex.test(text)) {
+            highlighted = true;
+            text = text.replace(regex, '<mark class="ai-keyword-highlight">$1</mark>');
+          }
+        });
+
+        if (highlighted) {
+          const span = document.createElement('span');
+          span.innerHTML = text;
+          node.parentNode.replaceChild(span, node);
+        }
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        Array.from(node.childNodes).forEach(highlightText);
+      }
+    };
+
+    highlightText(content);
+  }
+
+  // 禁用阅读模式
+  disableReadingMode() {
+    console.log('Disabling reading mode'); // 添加调试日志
+    
+    if (this.readingModeIframe) {
+      this.readingModeIframe.remove();
+      this.readingModeIframe = null;
+    }
+
+    // 移除关键词高亮
+    document.querySelectorAll('.ai-keyword-highlight').forEach(el => {
+      const text = el.textContent;
+      el.parentNode.replaceChild(document.createTextNode(text), el);
+    });
+
+    // 清除进度更新定时器
+    if (this.progressInterval) {
+      clearInterval(this.progressInterval);
+      this.progressInterval = null;
+    }
+
+    // 重置状态
+    this.readingState = {
+      summary: '',
+      keywords: [],
+      readingProgress: 0,
+      isReadingMode: false
+    };
+  }
+
+  // 添加一个新方法来处理特性更新
+  updateFeature(featureName, enabled) {
+    this.features[featureName] = enabled;
+    
+    // 特别处理阅读模式
+    if (featureName === 'readingMode') {
+      if (enabled && !this.readingState.isReadingMode) {
+        this.readingState.isReadingMode = true;
+        this.enableReadingMode();
+      } else if (!enabled && this.readingState.isReadingMode) {
+        this.readingState.isReadingMode = false;
+        this.disableReadingMode();
+      }
+    }
+  }
 }
 
 // 初始化内容分析器
@@ -525,41 +853,58 @@ window.addEventListener('message', (event) => {
 
 document.body.appendChild(iframe);
 
-// 添加消息监听，用于iframe和主页面的通信
+// 添加消息监听，于iframe和主页面的通信
 window.addEventListener('message', (event) => {
-  // 确保消息来自你的扩展
-  if (event.source === iframe.contentWindow) {
-    // 处理来自iframe的消息
-    console.log('Received message from iframe:', event.data);
+  if (event.source === iframe.contentWindow || event.source === this.readingModeIframe?.contentWindow) {
+    console.log('Received message:', event.data); // 添加调试日志
+    
+    const { type, feature, enabled } = event.data;
+    
+    if (type === 'closeReadingMode') {
+      console.log('Processing close reading mode'); // 添加调试日志
+      
+      // 更新功能状态
+      analyzer.features.readingMode = false;
+      analyzer.readingState.isReadingMode = false;
+      
+      // 关闭阅读模式
+      analyzer.disableReadingMode();
+      
+      // 更新 floating-options 中的开关状态
+      iframe.contentWindow.postMessage({
+        type: 'updateToggleState',
+        feature: 'readingMode',
+        enabled: false
+      }, '*');
+    } else if (type === 'updateFeature') {
+      analyzer.updateFeature(feature, enabled);
+    }
   }
 });
 
-// 在现有的消息监听器中添加处理逻辑
-window.addEventListener('message', (event) => {
-  // 确保消息来自你的扩展
-  if (event.source === iframe.contentWindow) {
-    const { type, feature, enabled } = event.data;
-    
-    if (type === 'updateFeature') {
-      switch (feature) {
-        case 'adBlocking':
-          // 更新广告拦截状态
-          analyzer.setAdBlockingEnabled(enabled);
-          break;
-        case 'searchReordering':
-          // 更新搜索重排序状态
-          analyzer.setSearchReorderingEnabled(enabled);
-          break;
-        case 'contextSuggestions':
-          // 更新上下文建议状态
-          analyzer.setContextSuggestionsEnabled(enabled);
-          break;
-      }
+// 监听来自background的URL变化消息
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'URL_CHANGED') {
+    // 如果当前处于阅读模式，重新启用阅读模式以分析新页面
+    if (analyzer.readingState.isReadingMode) {
+      analyzer.enableReadingMode();
     }
   }
 });
 
 
+
+/***/ })
+
+/******/ 	});
+/************************************************************************/
+/******/ 	
+/******/ 	// startup
+/******/ 	// Load entry module and return exports
+/******/ 	// This entry module is referenced by other modules so it can't be inlined
+/******/ 	var __webpack_exports__ = {};
+/******/ 	__webpack_modules__["./src/content/content.js"]();
+/******/ 	
 /******/ })()
 ;
 //# sourceMappingURL=content.js.map

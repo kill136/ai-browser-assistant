@@ -5,7 +5,7 @@
       "type": "chrome",
       "request": "launch",
       "name": "Debug Chrome Extension",
-      "url": "http://example.com",
+      "url": "https://docs-cn.nocobase.com/handbook/ui/fields/association-field",
       "webRoot": "${workspaceFolder}/src",
       "runtimeArgs": [
         "--load-extension=${workspaceFolder}/dist"

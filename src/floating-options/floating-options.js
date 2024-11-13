@@ -24,7 +24,9 @@ class FloatingOptions {
       adsBlockedCount: document.getElementById('adsBlockedCount'),
       apiCallsCount: document.getElementById('apiCallsCount'),
       settingsButton: document.getElementById('settingsButton'),
-      refreshButton: document.getElementById('refreshButton')
+      refreshButton: document.getElementById('refreshButton'),
+      readingModeToggle: document.getElementById('readingModeToggle'),
+      readingProgress: document.getElementById('readingProgress')
     };
 
     this.initialize();
@@ -63,6 +65,24 @@ class FloatingOptions {
         chrome.tabs.reload(tab.id);
       }
     });
+
+    // 添加阅读模式开关的事件监听器
+    this.elements.readingModeToggle?.addEventListener('change', (e) => {
+      this.toggleReadingMode(e.target.checked);
+    });
+
+    // 添加来自父页面的消息监听
+    window.addEventListener('message', (event) => {
+      console.log('Floating options received message:', event.data);
+      
+      if (event.data.type === 'updateToggleState') {
+        const { feature, enabled } = event.data;
+        const toggle = this.elements[`${feature}Toggle`];
+        if (toggle) {
+          toggle.checked = enabled;
+        }
+      }
+    });
   }
 
   async loadSettings() {
@@ -73,6 +93,7 @@ class FloatingOptions {
         adBlocking: true,
         searchReordering: true,
         contextSuggestions: true,
+        readingMode: false,
         ...features
       };
 
@@ -84,6 +105,17 @@ class FloatingOptions {
       }
       if (this.elements.contextSuggestionsToggle) {
         this.elements.contextSuggestionsToggle.checked = defaultFeatures.contextSuggestions;
+      }
+      if (this.elements.readingModeToggle) {
+        this.elements.readingModeToggle.checked = defaultFeatures.readingMode;
+      }
+
+      if (defaultFeatures.readingMode) {
+        window.parent.postMessage({
+          type: 'updateFeature',
+          feature: 'readingMode',
+          enabled: true
+        }, '*');
       }
     } catch (error) {
       console.error('Failed to load settings:', error);
@@ -198,6 +230,39 @@ class FloatingOptions {
       if (toggle) {
         toggle.checked = !enabled;
       }
+    }
+  }
+
+  async toggleReadingMode(enabled) {
+    try {
+      // 通知父页面更新阅读模式
+      window.parent.postMessage({
+        type: 'updateFeature',
+        feature: 'readingMode',
+        enabled
+      }, '*');
+
+      // 保存设置
+      const { features = {} } = await chrome.storage.sync.get('features');
+      await chrome.storage.sync.set({
+        features: {
+          ...features,
+          readingMode: enabled
+        }
+      });
+    } catch (error) {
+      console.error('Failed to toggle reading mode:', error);
+      // 回滚 UI 状态
+      if (this.elements.readingModeToggle) {
+        this.elements.readingModeToggle.checked = !enabled;
+      }
+    }
+  }
+
+  // 更新阅读进度显示
+  updateReadingProgress(progress) {
+    if (this.elements.readingProgress) {
+      this.elements.readingProgress.textContent = `${Math.round(progress)}%`;
     }
   }
 }
